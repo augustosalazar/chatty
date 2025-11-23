@@ -1,35 +1,35 @@
 version: '3.8'
 
 services:
-  redis:
+  chatty-redis:
     image: redis:alpine
     networks:
       - chat-net
 
-  mongo:
+  chatty-mongo:
     image: mongo:latest
     volumes:
-      - mongo-data:/data/db
+      - chatty-db:/data/db
     networks:
       - chat-net
 
-  chat-server:
+  chatty-server:
     build: .
     image: chat-server:latest
     deploy:
       replicas: 2
     environment:
       - PORT=3000
-      - REDIS_HOST=redis
+      - REDIS_HOST=chatty-redis
       - REDIS_PORT=6379
-      - MONGO_URI=mongodb://mongo:27017/chat-db
+      - MONGO_URI=mongodb://chatty-mongo:27017/chat-db
     networks:
       - chat-net
     depends_on:
-      - redis
-      - mongo
+      - chatty-redis
+      - chatty-mongo
 
-  nginx:
+  chatty-nginx:
     image: nginx:alpine
     ports:
       - "80:80"
@@ -38,11 +38,11 @@ services:
     networks:
       - chat-net
     depends_on:
-      - chat-server
+      - chatty-server
 
 networks:
   chat-net:
     driver: bridge
 
 volumes:
-  mongo-data:
+  chatty-db:
