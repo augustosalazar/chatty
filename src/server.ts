@@ -28,9 +28,10 @@ mongoose.connect(mongoUri)
 
 // Message Schema
 const messageSchema = new mongoose.Schema({
-  room: String,
-  sender: String,
-  message: String,
+  projectId: { type: String, required: true, index: true },
+  room: { type: String, required: true, index: true },
+  userId: { type: String, required: true },
+  message: { type: String, required: true },
   timestamp: { type: Date, default: Date.now }
 });
 const Message = mongoose.model('Message', messageSchema);
@@ -47,41 +48,81 @@ Promise.all([pubClient.connect(), subClient.connect()]).then(() => {
   });
 
   io.on('connection', (socket) => {
-    console.log(`User connected: ${socket.id}`);
+    const projectId = socket.handshake.query.projectId as string;
+    const userId = socket.handshake.query.userId as string;
 
-    socket.on('join_room', async (room) => {
+    if (!projectId || !userId) {
+      console.log(`Connection rejected: Missing projectId or userId. Socket: ${socket.id}`);
+      socket.disconnect();
+      return;
+    }
+
+    console.log(`User connected: ${userId} (Project: ${projectId})`);
+
+    // Helper to get scoped room name
+    const getGeneralRoom = () => `${projectId}:general`;
+    const getDmRoom = (targetId: string) => {
+      const participants = [userId, targetId].sort();
+      return `${projectId}:dm:${participants.join(':')}`;
+    };
+
+    // Join General Chat
+    socket.on('join_general', async () => {
+      const room = getGeneralRoom();
       socket.join(room);
-      console.log(`User ${socket.id} joined room ${room}`);
+      console.log(`User ${userId} joined ${room}`);
 
-      // Optional: Send last 50 messages history
       try {
-        const history = await Message.find({ room }).sort({ timestamp: 1 }).limit(50);
-        socket.emit('history', history);
+        const history = await Message.find({ projectId, room }).sort({ timestamp: 1 }).limit(50);
+        socket.emit('history', { room, messages: history });
       } catch (e) {
         console.error('Error fetching history:', e);
       }
     });
 
-    socket.on('send_message', async (data) => {
-      // data: { room, message, sender }
+    // Join DM
+    socket.on('join_dm', async (data: { targetUserId: string }) => {
+      if (!data.targetUserId) return;
+      const room = getDmRoom(data.targetUserId);
+      socket.join(room);
+      console.log(`User ${userId} joined DM ${room}`);
+
+      try {
+        const history = await Message.find({ projectId, room }).sort({ timestamp: 1 }).limit(50);
+        socket.emit('history', { room, messages: history });
+      } catch (e) {
+        console.error('Error fetching DM history:', e);
+      }
+    });
+
+    socket.on('send_message', async (data: { room: string, message: string }) => {
+      // Security: Ensure room belongs to project
+      if (!data.room.startsWith(`${projectId}:`)) {
+        console.warn(`User ${userId} tried to send to unauthorized room ${data.room}`);
+        return;
+      }
+
+      const messageData = {
+        projectId,
+        room: data.room,
+        userId,
+        message: data.message,
+        timestamp: new Date()
+      };
 
       // Save to MongoDB
       try {
-        const newMessage = new Message({
-          room: data.room,
-          sender: data.sender,
-          message: data.message
-        });
+        const newMessage = new Message(messageData);
         await newMessage.save();
       } catch (e) {
         console.error('Error saving message:', e);
       }
 
-      io.to(data.room).emit('receive_message', data);
+      io.to(data.room).emit('receive_message', messageData);
     });
 
     socket.on('disconnect', () => {
-      console.log(`User disconnected: ${socket.id}`);
+      console.log(`User disconnected: ${userId}`);
     });
   });
 
