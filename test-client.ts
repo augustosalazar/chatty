@@ -69,3 +69,34 @@ setTimeout(() => {
         message: "Psst, this is a private message."
     });
 }, 4000);
+
+setTimeout(() => {
+    console.log("\n--- Testing Offline Messaging (User C) ---");
+    // User A1 sends message to User C (who is offline)
+    const dmRoomAC = "project-A:dm:user-A1:user-C";
+    console.log(`[user-A1] Sending offline message to user-C in ${dmRoomAC}`);
+    userA1.emit("send_message", {
+        room: dmRoomAC,
+        message: "Hey C, are you there? (Offline Msg)"
+    });
+
+    // Simulate User C coming online later
+    setTimeout(() => {
+        console.log("... User C coming online ...");
+        const userC = createClient("project-A", "user-C");
+
+        userC.on("connect", () => {
+            // @ts-ignore
+            console.log(`Connected: ${userC.auth?.userId || userC.io.opts.query.userId}`);
+            // User C joins the DM room
+            userC.emit("join_dm", { targetUserId: "user-A1" });
+        });
+
+        userC.on("history", (data) => {
+            console.log(`[user-C] Received History for ${data.room}:`);
+            data.messages.forEach((msg: any) => {
+                console.log(`  - ${msg.message} (from ${msg.userId})`);
+            });
+        });
+    }, 2000);
+}, 6000);

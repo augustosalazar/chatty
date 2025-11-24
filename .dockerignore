@@ -2,3 +2,10 @@ node_modules
 dist
 .git
 .env
+r_chat
+test-client.ts
+README.md
+docker-compose.yml
+nginx.conf
+.dockerignore
+.gitignore
